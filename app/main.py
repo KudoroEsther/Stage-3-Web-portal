@@ -139,7 +139,11 @@ async def start_login(request: Request):
     challenge = __import__("base64").urlsafe_b64encode(
         __import__("hashlib").sha256(verifier.encode("utf-8")).digest()
     ).decode("utf-8").rstrip("=")
-    redirect_uri = str(request.url_for("oauth_callback"))
+    # redirect_uri = str(request.url_for("oauth_callback"))
+
+    # ADDED THIS DUE TO URL CALL BACK ERROR
+    redirect_uri = f"{settings.public_base_url.rstrip('/')}/auth/callback"
+
     params = urlencode(
         {
             "client": "web",
@@ -186,7 +190,10 @@ async def oauth_callback(request: Request, code: str, state: str):
                 "code": code,
                 "state": state,
                 "code_verifier": verifier,
-                "redirect_uri": str(request.url_for("oauth_callback")),
+                # "redirect_uri": str(request.url_for("oauth_callback")),
+                # added this due to url callback error
+                "redirect_uri": f"{settings.public_base_url.rstrip('/')}/auth/callback",
+
             },
         )
     payload = response.json()
