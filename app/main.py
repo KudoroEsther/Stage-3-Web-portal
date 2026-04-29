@@ -118,7 +118,16 @@ async def backend_request(
 
 async def backend_json(request: Request, method: str, path: str, *, params=None, json=None):
     response, tokens = await backend_request(request, method, path, params=params, json=json)
-    payload = response.json() if response.content else {}
+    
+    #Addition
+    if not response.content:
+        payload = {}
+    else:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"message": response.text or "Request failed"}#Ends
+    # payload = response.json() if response.content else {} 
     return response, payload, tokens
 
 
@@ -196,13 +205,27 @@ async def oauth_callback(request: Request, code: str, state: str):
 
             },
         )
-    payload = response.json()
+
+# error handling
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {"message": response.text or "Login failed."}
+
     if response.status_code != 200:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": payload.get("message", "Login failed.")},
             status_code=response.status_code,
         )
+
+    # payload = response.json()
+    # if response.status_code != 200:
+    #     return templates.TemplateResponse(
+    #         "login.html",
+    #         {"request": request, "error": payload.get("message", "Login failed.")},
+    #         status_code=response.status_code,
+    #     )
 
     redirect = RedirectResponse("/dashboard", status_code=302)
     clear_session(redirect)
