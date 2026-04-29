@@ -1,5 +1,6 @@
 import secrets
 from urllib.parse import urlencode
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Form, Request
@@ -10,10 +11,17 @@ from fastapi.templating import Jinja2Templates
 from app.config import get_settings
 
 
+# settings = get_settings()
+# app = FastAPI(title=settings.app_name)
+# app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# templates = Jinja2Templates(directory="app/templates")
+
 settings = get_settings()
+BASE_DIR = Path(__file__).resolve().parent
+
 app = FastAPI(title=settings.app_name)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR/ "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR/ "templates"))
 
 
 def is_logged_in(request: Request) -> bool:
