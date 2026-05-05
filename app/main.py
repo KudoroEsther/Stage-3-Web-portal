@@ -1,9 +1,9 @@
 import secrets
-from urllib.parse import urlencode
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 import httpx
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,17 +11,15 @@ from fastapi.templating import Jinja2Templates
 from app.config import get_settings
 
 
-# settings = get_settings()
-# app = FastAPI(title=settings.app_name)
-# app.mount("/static", StaticFiles(directory="app/static"), name="static")
-# templates = Jinja2Templates(directory="app/templates")
-
 settings = get_settings()
 BASE_DIR = Path(__file__).resolve().parent
-
 app = FastAPI(title=settings.app_name)
-app.mount("/static", StaticFiles(directory=str(BASE_DIR/ "static")), name="static")
-templates = Jinja2Templates(directory=str(BASE_DIR/ "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+def oauth_callback_url() -> str:
+    return f"{settings.public_base_url.rstrip('/')}/auth/callback"
 
 
 def is_logged_in(request: Request) -> bool:
@@ -79,6 +77,8 @@ async def backend_request(
     *,
     params: dict | None = None,
     json: dict | None = None,
+    data: dict | None = None,
+    files: dict | None = None,
 ):
     access_token = request.cookies.get("insighta_access_token")
     refresh_token = request.cookies.get("insighta_refresh_token")
@@ -93,6 +93,8 @@ async def backend_request(
             headers=headers,
             params=params,
             json=json,
+            data=data,
+            files=files,
         )
         if response.status_code != 401 or not refresh_token:
             return response, None
@@ -112,22 +114,29 @@ async def backend_request(
             headers=headers,
             params=params,
             json=json,
+            data=data,
+            files=files,
         )
         return retried, tokens
 
 
-async def backend_json(request: Request, method: str, path: str, *, params=None, json=None):
-    response, tokens = await backend_request(request, method, path, params=params, json=json)
-    
-    #Addition
+async def backend_json(request: Request, method: str, path: str, *, params=None, json=None, data=None, files=None):
+    response, tokens = await backend_request(
+        request,
+        method,
+        path,
+        params=params,
+        json=json,
+        data=data,
+        files=files,
+    )
     if not response.content:
         payload = {}
     else:
         try:
             payload = response.json()
         except ValueError:
-            payload = {"message": response.text or "Request failed"}#Ends
-    # payload = response.json() if response.content else {} 
+            payload = {"message": response.text or "Request failed"}
     return response, payload, tokens
 
 
@@ -148,11 +157,7 @@ async def start_login(request: Request):
     challenge = __import__("base64").urlsafe_b64encode(
         __import__("hashlib").sha256(verifier.encode("utf-8")).digest()
     ).decode("utf-8").rstrip("=")
-    # redirect_uri = str(request.url_for("oauth_callback"))
-
-    # ADDED THIS DUE TO URL CALL BACK ERROR
-    redirect_uri = f"{settings.public_base_url.rstrip('/')}/auth/callback"
-
+    redirect_uri = oauth_callback_url()
     params = urlencode(
         {
             "client": "web",
@@ -199,33 +204,19 @@ async def oauth_callback(request: Request, code: str, state: str):
                 "code": code,
                 "state": state,
                 "code_verifier": verifier,
-                # "redirect_uri": str(request.url_for("oauth_callback")),
-                # added this due to url callback error
-                "redirect_uri": f"{settings.public_base_url.rstrip('/')}/auth/callback",
-
+                "redirect_uri": oauth_callback_url(),
             },
         )
-
-# error handling
     try:
         payload = response.json()
-    except Exception:
+    except ValueError:
         payload = {"message": response.text or "Login failed."}
-
     if response.status_code != 200:
         return templates.TemplateResponse(
             "login.html",
             {"request": request, "error": payload.get("message", "Login failed.")},
             status_code=response.status_code,
         )
-
-    # payload = response.json()
-    # if response.status_code != 200:
-    #     return templates.TemplateResponse(
-    #         "login.html",
-    #         {"request": request, "error": payload.get("message", "Login failed.")},
-    #         status_code=response.status_code,
-    #     )
 
     redirect = RedirectResponse("/dashboard", status_code=302)
     clear_session(redirect)
@@ -329,6 +320,48 @@ async def create_profile(request: Request, name: str = Form(...), csrf_token: st
     if response.status_code >= 400:
         target = f"/profiles?error={payload.get('message', 'Unable to create profile')}"
     redirect = RedirectResponse(target, status_code=302)
+    if tokens:
+        set_session(redirect, tokens)
+    return redirect
+
+
+@app.post("/profiles/upload")
+async def upload_profiles(
+    request: Request,
+    file: UploadFile = File(...),
+    csrf_token: str = Form(...),
+):
+    require_csrf(request, csrf_token)
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        return RedirectResponse("/profiles?error=CSV%20file%20required", status_code=302)
+
+    await file.seek(0)
+    files = {
+        "file": (file.filename, file.file, file.content_type or "text/csv"),
+    }
+    response, payload, tokens = await backend_json(
+        request,
+        "POST",
+        "/api/profiles/upload",
+        files=files,
+    )
+
+    if response.status_code >= 400:
+        redirect = RedirectResponse(
+            f"/profiles?error={quote(payload.get('message', 'Unable to upload CSV'))}",
+            status_code=302,
+        )
+    else:
+        success_message = (
+            f"Uploaded {payload.get('inserted', 0)} profiles "
+            f"and skipped {payload.get('skipped', 0)} rows"
+        )
+        redirect = RedirectResponse(
+            f"/profiles?success={quote(success_message)}",
+            status_code=302,
+        )
+
     if tokens:
         set_session(redirect, tokens)
     return redirect

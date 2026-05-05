@@ -154,6 +154,16 @@ td {
   color: #b83c2a;
 }
 
+.success {
+  color: #276749;
+}
+
+.helper {
+  margin-bottom: 0;
+  color: #5f6f82;
+  font-size: 0.95rem;
+}
+
 @media (max-width: 768px) {
   .topbar {
     flex-direction: column;

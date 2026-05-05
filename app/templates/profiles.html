@@ -9,6 +9,9 @@
 {% if request.query_params.get('error') %}
 <p class="error">{{ request.query_params.get('error') }}</p>
 {% endif %}
+{% if request.query_params.get('success') %}
+<p class="success">{{ request.query_params.get('success') }}</p>
+{% endif %}
 <section class="card">
   <form method="get" action="/profiles" class="filters">
     <input type="text" name="gender" placeholder="gender" value="{{ filters.get('gender', '') }}" />
@@ -35,6 +38,14 @@
     <input type="text" name="name" placeholder="Create profile by name" />
     <button type="submit">Create profile</button>
   </form>
+</section>
+<section class="card">
+  <form method="post" action="/profiles/upload" enctype="multipart/form-data" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+    <input type="file" name="file" accept=".csv,text/csv" />
+    <button type="submit">Upload CSV</button>
+  </form>
+  <p class="helper">Admin-only upload. Valid rows are inserted in batches and invalid rows are skipped.</p>
 </section>
 <section class="card">
   <table>
